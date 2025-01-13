@@ -11,6 +11,7 @@
 #include "editor.h"
 
 #define CTRL_KEY(k) ((k) & 0x1f) //to hold our control key definitions.
+#define ABUF_INIT {NULL, 0}
 
 struct editorConfig {
     int screenrows;
@@ -74,26 +75,49 @@ void enableRawMode() {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) die("tcsetattr");
 }
 
+/*** append buffer ***/
+struct abuf {
+    char *b;
+    int len;
+};
+
+void ab_append(struct abuf *ab, const char *s, int len) {
+
+    char *new = realloc(ab->b, ab->len + len);
+    if (new == NULL) return; //die("realloc");
+
+    memcpy(&new[ab->len], s, len);
+
+    ab->b = new;
+    ab->len += len;
+}
+
+void ab_free(struct abuf *ab) {
+    free(ab->b);
+}
+
 /*** output ***/
-
 void editorDrawRows() {
-
-    //To draw a tilde at the beginning of any lines that come after the end of the file being edited.
     int y;
     for (y = 0; y < e_config.screenrows; y++) {
-        write(STDOUT_FILENO, "~\r\n", 3);
+        ab_append(ab, "~", 1);
+
+        if (y < e_config.screenrows - 1) {
+            ab_append(ab, "\r\n", 2);
+        }
     }
 }
 
 void editorRefreshScreen() {
+    struct abuf ab = ABUF_INIT;
+    ab_append(&ab, "\x1b[2J", 4);
+    ab_append(&ab, "\x1b[H", 3);
 
-    //To clear the screen and reposition the cursor when our program exits.
-    write(STDOUT_FILENO, "\x1b[2J", 4);
-    write(STDOUT_FILENO, "\x1b[H", 3);
+    editorDrawRows(&ab);
+    ab_append(&ab, "\x1b[H", 3);
 
-    //Draw tilde after refresh.
-    editorDrawRows();
-    write(STDOUT_FILENO, "\x1b[H", 3);
+    write(STDOUT_FILENO, ab.b, ab.len);
+    ab_free(&ab);
 }
 
 char editorReadKey() {
@@ -126,6 +150,31 @@ void editorProcessKeypress() {
 }
 
 /**
+ * Get the cursor position using ANSI escape sequences.
+ * Return 0 if successful, otherwise return -1.
+ * This function is used to determine the current position of the cursor in the terminal window so that the editor can properly handle input.
+ * The ANSI escape sequence "\x1b[6n" is used to retrieve the current cursor position.
+ * The write() function is used to send a string to the terminal.
+ * The STDOUT_FILENO constant represents the file descriptor for standard output, which is the terminal.
+ */
+int getCursorPosition(int *rows, int *cols) {
+    char buf[32];
+    unsigned int i = 0;
+    if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) return -1;
+
+    while (i < sizeof(buf) - 1) {
+        if (read(STDIN_FILENO, &buf[i], 1) != 1) break;
+        if (buf[i] == 'R') break;
+        i++;
+    }
+
+    buf[i] = '\0';
+    if (buf[0] != '\x1b' || buf[1] != '[') return -1;
+    if (sscanf(&buf[2], "%d;%d", rows, cols) != 2) return -1;
+    return 0;
+}
+
+/**
  * Get the size of the terminal window using ioctl() method.
  * Return 0 if successful, otherwise return -1.
  * This function is used to determine the size of the terminal window so that the editor can properly display text and handle input.
@@ -136,7 +185,10 @@ void editorProcessKeypress() {
 int getWindowSize(int *rows, int *cols) {
     struct winsize ws;
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
-        return -1;
+
+        if (write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12) return -1;
+
+        return getCursorPosition(rows, cols);
     } else {
         *cols = ws.ws_col;
         *rows = ws.ws_row;

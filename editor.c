@@ -12,6 +12,7 @@
 
 #define CTRL_KEY(k) ((k) & 0x1f) //to hold our control key definitions.
 #define ABUF_INIT {NULL, 0}
+#define KILO_VERSION "0.0.1"
 
 struct editorConfig {
     int screenrows;
@@ -97,10 +98,29 @@ void ab_free(struct abuf *ab) {
 }
 
 /*** output ***/
-void editorDrawRows() {
+void editorDrawRows(struct abuf *ab) {
     int y;
     for (y = 0; y < e_config.screenrows; y++) {
-        ab_append(ab, "~", 1);
+        if (y == e_config.screenrows / 3) {
+            char welcome[80];
+            int welcome_len = snprintf(welcome, sizeof(welcome), "Kilo editor -- version %s", KILO_VERSION);
+
+            if (welcome_len > e_config.screencols) welcome_len = e_config.screencols; 
+            int padding = (e_config.screencols - welcome_len) / 2;
+
+            if (padding) {
+                ab_append(ab, "~", 1);
+                padding--;
+            }
+
+            while (padding--) ab_append(ab, " ", 1);
+            ab_append(ab, welcome, welcome_len);
+
+        } else {
+            ab_append(ab, "~", 1);
+        }
+
+        ab_append(ab, "\x1b[K", 3);
 
         if (y < e_config.screenrows - 1) {
             ab_append(ab, "\r\n", 2);
@@ -110,11 +130,14 @@ void editorDrawRows() {
 
 void editorRefreshScreen() {
     struct abuf ab = ABUF_INIT;
-    ab_append(&ab, "\x1b[2J", 4);
+
+    ab_append(&ab, "\x1b[?25l", 6);
     ab_append(&ab, "\x1b[H", 3);
 
     editorDrawRows(&ab);
+
     ab_append(&ab, "\x1b[H", 3);
+    ab_append(&ab, "\x1b[?25h", 6);
 
     write(STDOUT_FILENO, ab.b, ab.len);
     ab_free(&ab);

@@ -14,13 +14,14 @@
 #define ABUF_INIT {NULL, 0}
 #define KILO_VERSION "0.0.1"
 
-struct editorConfig {
-    int screenrows;
-    int screencols;
+struct EditorConfig {
+    int cx, cy;
+    int screen_rows;
+    int screen_cols;
     struct termios orig_termios;
 };
 
-struct editorConfig e_config;
+struct EditorConfig e_config;
 
 /*** terminal ***/
 void die(const char *str) {
@@ -33,17 +34,17 @@ void die(const char *str) {
     exit(1);
 }
 
-void disableRawMode() {
+void disable_raw_mode() {
     //disable raw mode and if any error, die.
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &e_config.orig_termios) == -1)
         die("tcsetattr");
 }
 
-void enableRawMode() {
+void enable_raw_mode() {
     //get current terminal attributes and save them in the orig_termios struct.
     if (tcgetattr(STDIN_FILENO, &e_config.orig_termios) == -1) die("tcgetattr");
 
-    atexit(disableRawMode);
+    atexit(disable_raw_mode);
     struct termios raw = e_config.orig_termios;
 
     //a::IGNBRK Ignore break condition.
@@ -98,15 +99,15 @@ void ab_free(struct abuf *ab) {
 }
 
 /*** output ***/
-void editorDrawRows(struct abuf *ab) {
+void editor_draw_rows(struct abuf *ab) {
     int y;
-    for (y = 0; y < e_config.screenrows; y++) {
-        if (y == e_config.screenrows / 3) {
+    for (y = 0; y < e_config.screen_rows; y++) {
+        if (y == e_config.screen_rows / 3) {
             char welcome[80];
             int welcome_len = snprintf(welcome, sizeof(welcome), "Kilo editor -- version %s", KILO_VERSION);
 
-            if (welcome_len > e_config.screencols) welcome_len = e_config.screencols; 
-            int padding = (e_config.screencols - welcome_len) / 2;
+            if (welcome_len > e_config.screen_cols) welcome_len = e_config.screen_cols; 
+            int padding = (e_config.screen_cols - welcome_len) / 2;
 
             if (padding) {
                 ab_append(ab, "~", 1);
@@ -122,19 +123,19 @@ void editorDrawRows(struct abuf *ab) {
 
         ab_append(ab, "\x1b[K", 3);
 
-        if (y < e_config.screenrows - 1) {
+        if (y < e_config.screen_rows - 1) {
             ab_append(ab, "\r\n", 2);
         }
     }
 }
 
-void editorRefreshScreen() {
+void editor_refresh_screen() {
     struct abuf ab = ABUF_INIT;
 
     ab_append(&ab, "\x1b[?25l", 6);
     ab_append(&ab, "\x1b[H", 3);
 
-    editorDrawRows(&ab);
+    editor_draw_rows(&ab);
 
     ab_append(&ab, "\x1b[H", 3);
     ab_append(&ab, "\x1b[?25h", 6);
@@ -143,7 +144,7 @@ void editorRefreshScreen() {
     ab_free(&ab);
 }
 
-char editorReadKey() {
+char editor_read_key() {
     int nread;
     char input;
 
@@ -156,10 +157,10 @@ char editorReadKey() {
 }
 
 /*** input ***/
-void editorProcessKeypress() {
+void editor_process_keypress() {
 
     //Recieve the input from keyboard and map it to editor operations.
-    char ch = editorReadKey();
+    char ch = editor_read_key();
     switch (ch) {
         case CTRL_KEY('q'):
 
@@ -180,7 +181,7 @@ void editorProcessKeypress() {
  * The write() function is used to send a string to the terminal.
  * The STDOUT_FILENO constant represents the file descriptor for standard output, which is the terminal.
  */
-int getCursorPosition(int *rows, int *cols) {
+int get_cursor_position(int *rows, int *cols) {
     char buf[32];
     unsigned int i = 0;
     if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) return -1;
@@ -205,13 +206,13 @@ int getCursorPosition(int *rows, int *cols) {
  * The ioctl() function is used to send a request to the kernel to perform a specific operation.
  * The STDOUT_FILENO constant represents the file descriptor for standard output, which is the terminal.
  */
-int getWindowSize(int *rows, int *cols) {
+int get_windowSize(int *rows, int *cols) {
     struct winsize ws;
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
 
         if (write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12) return -1;
 
-        return getCursorPosition(rows, cols);
+        return get_cursor_position(rows, cols);
     } else {
         *cols = ws.ws_col;
         *rows = ws.ws_row;
@@ -220,15 +221,15 @@ int getWindowSize(int *rows, int *cols) {
 }
 
 void initialize_editor() {
-  if (getWindowSize(&e_config.screenrows, &e_config.screencols) == -1) die("getWindowSize");
+  if (get_windowSize(&e_config.screen_rows, &e_config.screen_cols) == -1) die("get_windowSize");
 }
 
 void run_editor() {
-    enableRawMode();
+    enable_raw_mode();
     initialize_editor();
 
     while(1) {
-        editorRefreshScreen();
-        editorProcessKeypress();
+        editor_refresh_screen();
+        editor_process_keypress();
     }
 }

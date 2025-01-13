@@ -13,6 +13,8 @@
 #define CTRL_KEY(k) ((k) & 0x1f) //to hold our control key definitions.
 
 struct editorConfig {
+    int screenrows;
+    int screencols;
     struct termios orig_termios;
 };
 
@@ -78,7 +80,7 @@ void editorDrawRows() {
 
     //To draw a tilde at the beginning of any lines that come after the end of the file being edited.
     int y;
-    for (y = 0; y < 10; y++) {
+    for (y = 0; y < e_config.screenrows; y++) {
         write(STDOUT_FILENO, "~\r\n", 3);
     }
 }
@@ -123,6 +125,14 @@ void editorProcessKeypress() {
     }
 }
 
+/**
+ * Get the size of the terminal window using ioctl() method.
+ * Return 0 if successful, otherwise return -1.
+ * This function is used to determine the size of the terminal window so that the editor can properly display text and handle input.
+ * The TIOCGWINSZ request is used to retrieve the current width and height of the terminal window.
+ * The ioctl() function is used to send a request to the kernel to perform a specific operation.
+ * The STDOUT_FILENO constant represents the file descriptor for standard output, which is the terminal.
+ */
 int getWindowSize(int *rows, int *cols) {
     struct winsize ws;
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
@@ -135,7 +145,12 @@ int getWindowSize(int *rows, int *cols) {
 }
 
 void initialize_editor() {
+  if (getWindowSize(&e_config.screenrows, &e_config.screencols) == -1) die("getWindowSize");
+}
+
+void run_editor() {
     enableRawMode();
+    initialize_editor();
 
     while(1) {
         editorRefreshScreen();

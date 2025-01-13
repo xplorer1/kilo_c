@@ -6,7 +6,7 @@
 
 /*** init ***/
 int main() {
-    initialize_editor();
+    run_editor();
 
     return 0;
 }

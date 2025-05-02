@@ -137,7 +137,10 @@ void editor_refresh_screen() {
 
     editor_draw_rows(&ab);
 
-    ab_append(&ab, "\x1b[H", 3);
+    char buf[32];
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", e_config.cy + 1, e_config.cx + 1);
+    ab_append(&ab, buf, strlen(buf));
+
     ab_append(&ab, "\x1b[?25h", 6);
 
     write(STDOUT_FILENO, ab.b, ab.len);
@@ -157,6 +160,23 @@ char editor_read_key() {
 }
 
 /*** input ***/
+void editor_move_cursor(char key) {
+    switch (key) {
+        case 'a':
+            e_config.cx--;
+            break;
+        case 'd':
+            e_config.cx++;
+            break;
+        case 'w':
+            e_config.cy--;
+            break;
+        case 's':
+            e_config.cy++;
+            break;
+    }
+}
+
 void editor_process_keypress() {
 
     //Recieve the input from keyboard and map it to editor operations.
@@ -169,6 +189,13 @@ void editor_process_keypress() {
             write(STDOUT_FILENO, "\x1b[H", 3);
 
             exit(0);
+        break;
+
+        case 'w':
+        case 's':
+        case 'a':
+        case 'd':
+            editor_move_cursor(ch);
         break;
     }
 }
@@ -221,6 +248,8 @@ int get_windowSize(int *rows, int *cols) {
 }
 
 void initialize_editor() {
+    e_config.cx = 0;
+    e_config.cy = 0;
   if (get_windowSize(&e_config.screen_rows, &e_config.screen_cols) == -1) die("get_windowSize");
 }
 

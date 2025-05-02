@@ -10,6 +10,7 @@
 
 #include "editor.h"
 
+/*** defines ***/
 #define CTRL_KEY(k) ((k) & 0x1f) //to hold our control key definitions.
 #define ABUF_INIT {NULL, 0}
 #define KILO_VERSION "0.0.1"
@@ -22,6 +23,13 @@ struct EditorConfig {
 };
 
 struct EditorConfig e_config;
+
+enum editor_key {
+    ARROW_LEFT = 1000,
+    ARROW_RIGHT,
+    ARROW_UP,
+    ARROW_DOWN
+};
 
 /*** terminal ***/
 void die(const char *str) {
@@ -147,7 +155,7 @@ void editor_refresh_screen() {
     ab_free(&ab);
 }
 
-char editor_read_key() {
+int editor_read_key() {
     int nread;
     char input;
 
@@ -156,22 +164,39 @@ char editor_read_key() {
         if (nread == -1 && errno != EAGAIN) die("read");
     }
     
-    return input;
+    if (input == '\x1b') {
+        char seq[3];
+        if (read(STDIN_FILENO, &seq[0], 1) != 1) return '\x1b';
+        if (read(STDIN_FILENO, &seq[1], 1) != 1) return '\x1b';
+        if (seq[0] == '[') {
+            switch (seq[1]) {
+                case 'A': return ARROW_UP;
+                case 'B': return ARROW_DOWN;
+                case 'C': return ARROW_RIGHT;
+                case 'D': return ARROW_LEFT;
+            }
+        }
+
+        return '\x1b';
+
+    } else {
+        return input;
+    }
 }
 
 /*** input ***/
-void editor_move_cursor(char key) {
+void editor_move_cursor(int key) {
     switch (key) {
-        case 'a':
+        case ARROW_LEFT:
             e_config.cx--;
             break;
-        case 'd':
+        case ARROW_RIGHT:
             e_config.cx++;
             break;
-        case 'w':
+        case ARROW_UP:
             e_config.cy--;
             break;
-        case 's':
+        case ARROW_DOWN:
             e_config.cy++;
             break;
     }
@@ -180,7 +205,7 @@ void editor_move_cursor(char key) {
 void editor_process_keypress() {
 
     //Recieve the input from keyboard and map it to editor operations.
-    char ch = editor_read_key();
+    int ch = editor_read_key();
     switch (ch) {
         case CTRL_KEY('q'):
 
@@ -191,10 +216,10 @@ void editor_process_keypress() {
             exit(0);
         break;
 
-        case 'w':
-        case 's':
-        case 'a':
-        case 'd':
+        case ARROW_UP:
+        case ARROW_DOWN:
+        case ARROW_LEFT:
+        case ARROW_RIGHT:
             editor_move_cursor(ch);
         break;
     }

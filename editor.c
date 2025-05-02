@@ -28,7 +28,11 @@ enum editor_key {
     ARROW_LEFT = 1000,
     ARROW_RIGHT,
     ARROW_UP,
-    ARROW_DOWN
+    ARROW_DOWN,
+    HOME_KEY,
+    END_KEY,
+    PAGE_UP,
+    PAGE_DOWN
 };
 
 /*** terminal ***/
@@ -169,11 +173,32 @@ int editor_read_key() {
         if (read(STDIN_FILENO, &seq[0], 1) != 1) return '\x1b';
         if (read(STDIN_FILENO, &seq[1], 1) != 1) return '\x1b';
         if (seq[0] == '[') {
+            if (seq[1] >= '0' && seq[1] <= '9') {
+                if (read(STDIN_FILENO, &seq[2], 1) != 1) return '\x1b';
+                if (seq[2] == '~') {
+                    switch (seq[1]) {
+                        case '1': return HOME_KEY;
+                        case '4': return END_KEY;
+                        case '5': return PAGE_UP;
+                        case '6': return PAGE_DOWN;
+                        case '7': return HOME_KEY;
+                        case '8': return END_KEY;
+                    }
+                }
+            } else {
+                switch (seq[1]) {
+                    case 'A': return ARROW_UP;
+                    case 'B': return ARROW_DOWN;
+                    case 'C': return ARROW_RIGHT;
+                    case 'D': return ARROW_LEFT;
+                    case 'H': return HOME_KEY;
+                    case 'F': return END_KEY;
+                }
+            }
+        } else if (seq[0] == 'O') {
             switch (seq[1]) {
-                case 'A': return ARROW_UP;
-                case 'B': return ARROW_DOWN;
-                case 'C': return ARROW_RIGHT;
-                case 'D': return ARROW_LEFT;
+                case 'H': return HOME_KEY;
+                case 'F': return END_KEY;
             }
         }
 
@@ -188,16 +213,16 @@ int editor_read_key() {
 void editor_move_cursor(int key) {
     switch (key) {
         case ARROW_LEFT:
-            e_config.cx--;
+            if (e_config.cx != 0) e_config.cx--;
             break;
         case ARROW_RIGHT:
-            e_config.cx++;
+            if (e_config.cx != e_config.screen_cols - 1) e_config.cx++;
             break;
         case ARROW_UP:
-            e_config.cy--;
+            if (e_config.cy != 0) e_config.cy--;
             break;
         case ARROW_DOWN:
-            e_config.cy++;
+            if (e_config.cy != e_config.screen_rows - 1) e_config.cy++;
             break;
     }
 }
@@ -214,6 +239,23 @@ void editor_process_keypress() {
             write(STDOUT_FILENO, "\x1b[H", 3);
 
             exit(0);
+        break;
+
+        case HOME_KEY:
+            e_config.cx = 0;
+        break;
+
+        case END_KEY:
+            e_config.cx = e_config.screen_cols - 1;
+        break;
+
+        case PAGE_UP:
+        case PAGE_DOWN: {
+            int times = e_config.screen_rows;
+            while (times--) {
+                editor_move_cursor(ch == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+            }
+        }
         break;
 
         case ARROW_UP:

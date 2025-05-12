@@ -29,7 +29,7 @@ struct EditorConfig {
     int screen_rows;
     int screen_cols;
     int num_rows;
-    editor_row row;
+    editor_row *row;
     struct termios orig_termios;
 };
 
@@ -117,6 +117,25 @@ void enable_raw_mode() {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) die("tcsetattr");
 }
 
+/*** editor operations ***/
+/**
+ * This function is used to append a row to the editor.
+ * The str is the string to append.
+ * The len is the length of the string to append.
+ */
+void editor_append_row(char *str, size_t len) {
+    e_config.row = realloc(e_config.row, sizeof(editor_row) * (e_config.num_rows + 1));
+
+    int at = e_config.num_rows;
+    e_config.row[at].size = len;
+    e_config.row[at].chars = malloc(len + 1);
+
+    memcpy(e_config.row[at].chars, str, len);
+    e_config.row[at].chars[len] = '\0';
+
+    e_config.num_rows++;
+}
+
 /*** file i/o ***/
 /**
  * This function is used to open a file.
@@ -132,17 +151,11 @@ void editor_open(char *filename) {
     size_t linecap = 0;
     ssize_t line_len;
 
-    line_len = getline(&line, &linecap, file_pointer);
-    if (line_len != -1) {
+    while ((line_len = getline(&line, &linecap, file_pointer)) != -1) {
         while (line_len > 0 && (line[line_len - 1] == '\n' || line[line_len - 1] == '\r'))
             line_len--;
 
-        e_config.row.size = line_len;
-        e_config.row.chars = malloc(line_len + 1);
-
-        memcpy(e_config.row.chars, line, line_len);
-        e_config.row.chars[line_len] = '\0';
-        e_config.num_rows = 1;
+        editor_append_row(line, line_len);
     }
 
     free(line);
@@ -150,7 +163,6 @@ void editor_open(char *filename) {
 }
 
 /*** append buffer ***/
-
 /**
  * This struct is used to store the input from the keyboard.
  * The b member is a pointer to the input from the keyboard.
@@ -195,9 +207,9 @@ void ab_free(struct abuf *ab) {
 void editor_draw_rows(struct abuf *ab) {
     int y;
     for (y = 0; y < e_config.screen_rows; y++) {
-        if(y > e_config.num_rows) {
+        if(y >= e_config.num_rows) {
 
-            if (y == e_config.screen_rows / 3) {
+            if (e_config.num_rows == 0 && y == e_config.screen_rows / 3) {
                 char welcome[80];
                 int welcome_len = snprintf(welcome, sizeof(welcome), "Kilo editor -- version %s", KILO_VERSION);
 
@@ -216,9 +228,9 @@ void editor_draw_rows(struct abuf *ab) {
                 ab_append(ab, "~", 1);
             }
         } else {
-            int len = e_config.row.size;
+            int len = e_config.row[y].size;
             if (len > e_config.screen_cols) len = e_config.screen_cols;
-            ab_append(ab, e_config.row.chars, len);
+            ab_append(ab, e_config.row[y].chars, len);
         }
 
         ab_append(ab, "\x1b[K", 3);
@@ -411,7 +423,7 @@ int get_cursor_position(int *rows, int *cols) {
  * The ioctl() function is used to send a request to the kernel to perform a specific operation.
  * The STDOUT_FILENO constant represents the file descriptor for standard output, which is the terminal.
  */
-int get_windowSize(int *rows, int *cols) {
+int get_window_size(int *rows, int *cols) {
     struct winsize ws;
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
 
@@ -427,14 +439,16 @@ int get_windowSize(int *rows, int *cols) {
 
 /**
  * This function is used to initialize the editor.
- * The get_windowSize() function is used to get the size of the terminal window.
+ * The get_window_size() function is used to get the size of the terminal window.
  * The die() function is used to handle errors.
  */
 void initialize_editor() {
     e_config.cx = 0;
     e_config.cy = 0;
     e_config.num_rows = 0;
-  if (get_windowSize(&e_config.screen_rows, &e_config.screen_cols) == -1) die("get_windowSize");
+    e_config.row = NULL;
+
+    if (get_window_size(&e_config.screen_rows, &e_config.screen_cols) == -1) die("get_window_size");
 }
 
 /**

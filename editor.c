@@ -15,10 +15,17 @@
 #define ABUF_INIT {NULL, 0}
 #define KILO_VERSION "0.0.1"
 
+typedef struct EditorRow {
+  int size;
+  char *chars;
+} editor_row;
+
 struct EditorConfig {
     int cx, cy;
     int screen_rows;
     int screen_cols;
+    int num_rows;
+    editor_row row;
     struct termios orig_termios;
 };
 
@@ -31,6 +38,7 @@ enum editor_key {
     ARROW_DOWN,
     HOME_KEY,
     END_KEY,
+    DEL_KEY,
     PAGE_UP,
     PAGE_DOWN
 };
@@ -89,6 +97,33 @@ void enable_raw_mode() {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) die("tcsetattr");
 }
 
+/*** file i/o ***/
+void editor_open(char *filename) {
+    FILE *fp = fopen(filename, "r");
+    if (!fp) die("fopen");
+
+    char *line = NULL;
+    size_t linecap = 0;
+
+    ssize_t line_len;
+
+    line_len = getline(&line, &linecap, fp);
+    if (line_len != -1) {
+        while (line_len > 0 && (line[line_len - 1] == '\n' || line[line_len - 1] == '\r'))
+            line_len--;
+
+        e_config.row.size = line_len;
+        e_config.row.chars = malloc(line_len + 1);
+
+        memcpy(e_config.row.chars, line, line_len);
+        e_config.row.chars[line_len] = '\0';
+        e_config.num_rows = 1;
+    }
+
+    free(line);
+    fclose(fp);
+}
+
 /*** append buffer ***/
 struct abuf {
     char *b;
@@ -114,23 +149,30 @@ void ab_free(struct abuf *ab) {
 void editor_draw_rows(struct abuf *ab) {
     int y;
     for (y = 0; y < e_config.screen_rows; y++) {
-        if (y == e_config.screen_rows / 3) {
-            char welcome[80];
-            int welcome_len = snprintf(welcome, sizeof(welcome), "Kilo editor -- version %s", KILO_VERSION);
+        if(y > e_config.num_rows) {
 
-            if (welcome_len > e_config.screen_cols) welcome_len = e_config.screen_cols; 
-            int padding = (e_config.screen_cols - welcome_len) / 2;
+            if (y == e_config.screen_rows / 3) {
+                char welcome[80];
+                int welcome_len = snprintf(welcome, sizeof(welcome), "Kilo editor -- version %s", KILO_VERSION);
 
-            if (padding) {
+                if (welcome_len > e_config.screen_cols) welcome_len = e_config.screen_cols; 
+                int padding = (e_config.screen_cols - welcome_len) / 2;
+
+                if (padding) {
+                    ab_append(ab, "~", 1);
+                    padding--;
+                }
+
+                while (padding--) ab_append(ab, " ", 1);
+                ab_append(ab, welcome, welcome_len);
+
+            } else {
                 ab_append(ab, "~", 1);
-                padding--;
             }
-
-            while (padding--) ab_append(ab, " ", 1);
-            ab_append(ab, welcome, welcome_len);
-
         } else {
-            ab_append(ab, "~", 1);
+            int len = e_config.row.size;
+            if (len > e_config.screen_cols) len = e_config.screen_cols;
+            ab_append(ab, e_config.row.chars, len);
         }
 
         ab_append(ab, "\x1b[K", 3);
@@ -178,6 +220,7 @@ int editor_read_key() {
                 if (seq[2] == '~') {
                     switch (seq[1]) {
                         case '1': return HOME_KEY;
+                        case '3': return DEL_KEY;
                         case '4': return END_KEY;
                         case '5': return PAGE_UP;
                         case '6': return PAGE_DOWN;
@@ -317,12 +360,17 @@ int get_windowSize(int *rows, int *cols) {
 void initialize_editor() {
     e_config.cx = 0;
     e_config.cy = 0;
+    e_config.num_rows = 0;
   if (get_windowSize(&e_config.screen_rows, &e_config.screen_cols) == -1) die("get_windowSize");
 }
 
-void run_editor() {
+void run_editor(int argc, char *argv[]) {
     enable_raw_mode();
     initialize_editor();
+    if (argc >= 2) {
+        editor_open(argv[1]);
+    }
+    
 
     while(1) {
         editor_refresh_screen();

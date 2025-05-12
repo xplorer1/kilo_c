@@ -5,8 +5,8 @@
 #include "editor.h"
 
 /*** init ***/
-int main() {
-    run_editor();
+int main(int argc, char *argv[]) {
+    run_editor(argc, argv);
 
     return 0;
 }

@@ -29,10 +29,6 @@ bin/
 .DS_Store
 .idea
 
-*.exe
-
-*.o
-
 # Ignore all
 *
 
@@ -41,3 +37,6 @@ bin/
 
 # Unignore all dirs
 !*/
+
+*.exe
+*.o

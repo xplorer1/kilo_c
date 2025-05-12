@@ -9,6 +9,6 @@
 
 #include <stdio.h>
 
-void run_editor();
+void run_editor(int argc, char *argv[]);
 
 #endif /* _KILO_H_ */

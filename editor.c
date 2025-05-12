@@ -1,3 +1,7 @@
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -44,6 +48,11 @@ enum editor_key {
 };
 
 /*** terminal ***/
+/**
+ * This function is used to handle errors.
+ * The perror() function is used to print the error message.
+ * The exit() function is used to exit the program.
+ */
 void die(const char *str) {
 
     //To clear the screen and reposition the cursor when our program exits.
@@ -54,12 +63,23 @@ void die(const char *str) {
     exit(1);
 }
 
+/**
+ * This function is used to disable raw mode.
+ * The tcsetattr() function is used to set the terminal attributes.
+ * The STDIN_FILENO constant represents the file descriptor for standard input, which is the keyboard.
+ */
 void disable_raw_mode() {
     //disable raw mode and if any error, die.
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &e_config.orig_termios) == -1)
         die("tcsetattr");
 }
 
+/**
+ * This function is used to enable raw mode.
+ * The tcgetattr() function is used to get the current terminal attributes.
+ * The tcsetattr() function is used to set the terminal attributes.
+ * The STDIN_FILENO constant represents the file descriptor for standard input, which is the keyboard.
+ */
 void enable_raw_mode() {
     //get current terminal attributes and save them in the orig_termios struct.
     if (tcgetattr(STDIN_FILENO, &e_config.orig_termios) == -1) die("tcgetattr");
@@ -98,16 +118,21 @@ void enable_raw_mode() {
 }
 
 /*** file i/o ***/
+/**
+ * This function is used to open a file.
+ * The fopen() function is used to open a file.
+ * The file_pointer is the file pointer to the file.
+ * The filename is the name of the file to open.
+ */
 void editor_open(char *filename) {
-    FILE *fp = fopen(filename, "r");
-    if (!fp) die("fopen");
+    FILE *file_pointer = fopen(filename, "r");
+    if (!file_pointer) die("fopen");
 
     char *line = NULL;
     size_t linecap = 0;
-
     ssize_t line_len;
 
-    line_len = getline(&line, &linecap, fp);
+    line_len = getline(&line, &linecap, file_pointer);
     if (line_len != -1) {
         while (line_len > 0 && (line[line_len - 1] == '\n' || line[line_len - 1] == '\r'))
             line_len--;
@@ -121,15 +146,26 @@ void editor_open(char *filename) {
     }
 
     free(line);
-    fclose(fp);
+    fclose(file_pointer);
 }
 
 /*** append buffer ***/
+
+/**
+ * This struct is used to store the input from the keyboard.
+ * The b member is a pointer to the input from the keyboard.
+ * The len member is the length of the input from the keyboard.
+ */
 struct abuf {
     char *b;
     int len;
 };
 
+/**
+ * This function is used to append a string to the abuf struct.
+ * The realloc() function is used to reallocate the memory for the abuf struct.
+ * The memcpy() function is used to copy the string to the abuf struct.
+ */
 void ab_append(struct abuf *ab, const char *s, int len) {
 
     char *new = realloc(ab->b, ab->len + len);
@@ -141,11 +177,21 @@ void ab_append(struct abuf *ab, const char *s, int len) {
     ab->len += len;
 }
 
+/**
+ * This function is used to free the abuf struct.
+ * The free() function is used to free the abuf struct.
+ */
 void ab_free(struct abuf *ab) {
     free(ab->b);
 }
 
 /*** output ***/
+/**
+ * This function is used to draw the rows on the screen.
+ * The abuf struct is used to store the input from the keyboard.
+ * The ab_append() function is used to append the input from the keyboard to the abuf struct.
+ * The write() function is used to write the input from the keyboard to the screen.
+ */
 void editor_draw_rows(struct abuf *ab) {
     int y;
     for (y = 0; y < e_config.screen_rows; y++) {
@@ -183,6 +229,12 @@ void editor_draw_rows(struct abuf *ab) {
     }
 }
 
+/**
+ * This function is used to refresh the screen.
+ * The abuf struct is used to store the input from the keyboard.
+ * The ab_append() function is used to append the input from the keyboard to the abuf struct.
+ * The write() function is used to write the input from the keyboard to the screen.
+ */
 void editor_refresh_screen() {
     struct abuf ab = ABUF_INIT;
 
@@ -201,6 +253,11 @@ void editor_refresh_screen() {
     ab_free(&ab);
 }
 
+/**
+ * This function is used to read the input from the keyboard and return the character.
+ * The read() function is used to read the input from the keyboard and return the character.
+ * The STDIN_FILENO constant represents the file descriptor for standard input, which is the keyboard.
+ */
 int editor_read_key() {
     int nread;
     char input;
@@ -253,6 +310,12 @@ int editor_read_key() {
 }
 
 /*** input ***/
+/**
+ * This function is used to move the cursor to the appropriate position based on the key pressed.
+ * The key is the key pressed by the user.
+ * The switch statement is used to handle the input from the keyboard and map it to the appropriate editor operation.
+ * The case statements are used to handle the input from the keyboard and map it to the appropriate editor operation.
+ */
 void editor_move_cursor(int key) {
     switch (key) {
         case ARROW_LEFT:
@@ -270,6 +333,13 @@ void editor_move_cursor(int key) {
     }
 }
 
+/**
+ * This function is used to handle the input from the keyboard and map it to the appropriate editor operation.
+ * The editor_read_key() function is used to read the input from the keyboard.
+ * The switch statement is used to handle the input from the keyboard and map it to the appropriate editor operation.
+ * The case statements are used to handle the input from the keyboard and map it to the appropriate editor operation.
+ * The default statement is used to handle the input from the keyboard and map it to the appropriate editor operation.
+ */
 void editor_process_keypress() {
 
     //Recieve the input from keyboard and map it to editor operations.
@@ -311,7 +381,6 @@ void editor_process_keypress() {
 }
 
 /**
- * Get the cursor position using ANSI escape sequences.
  * Return 0 if successful, otherwise return -1.
  * This function is used to determine the current position of the cursor in the terminal window so that the editor can properly handle input.
  * The ANSI escape sequence "\x1b[6n" is used to retrieve the current cursor position.
@@ -336,7 +405,6 @@ int get_cursor_position(int *rows, int *cols) {
 }
 
 /**
- * Get the size of the terminal window using ioctl() method.
  * Return 0 if successful, otherwise return -1.
  * This function is used to determine the size of the terminal window so that the editor can properly display text and handle input.
  * The TIOCGWINSZ request is used to retrieve the current width and height of the terminal window.
@@ -357,6 +425,11 @@ int get_windowSize(int *rows, int *cols) {
     }
 }
 
+/**
+ * This function is used to initialize the editor.
+ * The get_windowSize() function is used to get the size of the terminal window.
+ * The die() function is used to handle errors.
+ */
 void initialize_editor() {
     e_config.cx = 0;
     e_config.cy = 0;
@@ -364,6 +437,12 @@ void initialize_editor() {
   if (get_windowSize(&e_config.screen_rows, &e_config.screen_cols) == -1) die("get_windowSize");
 }
 
+/**
+ * This function is used to run the editor.
+ * The enable_raw_mode() function is used to enable raw mode.
+ * The initialize_editor() function is used to initialize the editor.
+ * The editor_open() function is used to open a file.
+ */
 void run_editor(int argc, char *argv[]) {
     enable_raw_mode();
     initialize_editor();

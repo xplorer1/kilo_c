@@ -18,16 +18,21 @@
 #define CTRL_KEY(k) ((k) & 0x1f) //to hold our control key definitions.
 #define ABUF_INIT {NULL, 0}
 #define KILO_VERSION "0.0.1"
+#define KILO_TAB_STOP 8
 
 typedef struct EditorRow {
-  int size;
-  char *chars;
+    int size;
+    char *chars;
+    int r_size;
+    char *render;
 } editor_row;
 
 struct EditorConfig {
     int cx, cy;
     int screen_rows;
     int screen_cols;
+    int row_offset;
+    int col_offset;
     int num_rows;
     editor_row *row;
     struct termios orig_termios;
@@ -133,7 +138,38 @@ void editor_append_row(char *str, size_t len) {
     memcpy(e_config.row[at].chars, str, len);
     e_config.row[at].chars[len] = '\0';
 
+    e_config.row[at].r_size = 0;
+    e_config.row[at].render = NULL;
+
     e_config.num_rows++;
+}
+
+/**
+ * This function is used to update the row.
+ * The row is the row to update.
+ */
+void editor_update_row(editor_row *row) {
+    int tabs = 0;
+    int j;
+    for (j = 0; j < row->size; j++) {
+        if (row->chars[j] == '\t') tabs++;
+    }
+
+    free(row->render);
+    row->render = malloc(row->size + tabs * (KILO_TAB_STOP - 1) + 1);
+
+    int idx = 0;
+    for (j = 0; j < row->size; j++) {
+        if (row->chars[j] == '\t') {
+            row->render[idx++] = ' ';
+            while (idx % KILO_TAB_STOP != 0) row->render[idx++] = ' ';
+        } else {
+            row->render[idx++] = row->chars[j];
+        }
+    }
+
+    row->render[idx] = '\0';
+    row->r_size = idx;
 }
 
 /*** file i/o ***/
@@ -207,7 +243,9 @@ void ab_free(struct abuf *ab) {
 void editor_draw_rows(struct abuf *ab) {
     int y;
     for (y = 0; y < e_config.screen_rows; y++) {
-        if(y >= e_config.num_rows) {
+        int filerow = y + e_config.row_offset;
+
+        if(filerow >= e_config.num_rows) {
 
             if (e_config.num_rows == 0 && y == e_config.screen_rows / 3) {
                 char welcome[80];
@@ -228,9 +266,12 @@ void editor_draw_rows(struct abuf *ab) {
                 ab_append(ab, "~", 1);
             }
         } else {
-            int len = e_config.row[y].size;
+
+            int len = e_config.row[filerow].r_size - e_config.col_offset;
+            if (len < 0) len = 0;
             if (len > e_config.screen_cols) len = e_config.screen_cols;
-            ab_append(ab, e_config.row[y].chars, len);
+
+            ab_append(ab, &e_config.row[filerow].render[e_config.col_offset], len);
         }
 
         ab_append(ab, "\x1b[K", 3);
@@ -242,12 +283,35 @@ void editor_draw_rows(struct abuf *ab) {
 }
 
 /**
+ * This function is used to scroll the screen.
+ * The e_config.cy variable is used to store the current cursor position.
+ * The e_config.row_offset variable is used to store the row offset.
+ * The e_config.screen_rows variable is used to store the screen rows.
+ */
+void editor_scroll() {
+    if(e_config.cy < e_config.row_offset) {
+        e_config.row_offset = e_config.cy;
+    }
+    if(e_config.cy >= e_config.row_offset + e_config.screen_rows) {
+        e_config.row_offset = e_config.cy - e_config.screen_rows + 1;
+    }
+    if(e_config.cx < e_config.col_offset) {
+        e_config.col_offset = e_config.cx;
+    }
+    if(e_config.cx >= e_config.col_offset + e_config.screen_cols) {
+        e_config.col_offset = e_config.cx - e_config.screen_cols + 1;
+    }
+}
+
+/**
  * This function is used to refresh the screen.
  * The abuf struct is used to store the input from the keyboard.
  * The ab_append() function is used to append the input from the keyboard to the abuf struct.
  * The write() function is used to write the input from the keyboard to the screen.
  */
 void editor_refresh_screen() {
+    editor_scroll();
+
     struct abuf ab = ABUF_INIT;
 
     ab_append(&ab, "\x1b[?25l", 6);
@@ -256,7 +320,7 @@ void editor_refresh_screen() {
     editor_draw_rows(&ab);
 
     char buf[32];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", e_config.cy + 1, e_config.cx + 1);
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (e_config.cy - e_config.row_offset) + 1, (e_config.cx - e_config.col_offset) + 1);
     ab_append(&ab, buf, strlen(buf));
 
     ab_append(&ab, "\x1b[?25h", 6);
@@ -329,19 +393,45 @@ int editor_read_key() {
  * The case statements are used to handle the input from the keyboard and map it to the appropriate editor operation.
  */
 void editor_move_cursor(int key) {
+    editor_row *row = (e_config.cy >= e_config.num_rows) ? NULL : &e_config.row[e_config.cy];
+
     switch (key) {
         case ARROW_LEFT:
-            if (e_config.cx != 0) e_config.cx--;
+            if (e_config.cx != 0) {
+                e_config.cx--;
+
+            } else if (e_config.cy > 0) {
+
+                e_config.cy--;
+                e_config.cx = e_config.row[e_config.cy].size;
+            }
+
             break;
         case ARROW_RIGHT:
-            if (e_config.cx != e_config.screen_cols - 1) e_config.cx++;
+            if (row && e_config.cx < row->size) {
+                e_config.cx++;
+            } else if (row && e_config.cx == row->size) {
+
+                e_config.cy++;
+                e_config.cx = 0;
+            }
+
             break;
         case ARROW_UP:
-            if (e_config.cy != 0) e_config.cy--;
+            if (e_config.cy != 0) {
+                e_config.cy--;
+                e_config.cx = e_config.row[e_config.cy].size;
+            }
             break;
         case ARROW_DOWN:
-            if (e_config.cy != e_config.screen_rows - 1) e_config.cy++;
+            if (e_config.cy < e_config.num_rows) e_config.cy++;
             break;
+    }
+
+    row = (e_config.cy >= e_config.num_rows) ? NULL : &e_config.row[e_config.cy];
+    int rowlen = row ? row->size : 0;
+    if (e_config.cx > rowlen) {
+        e_config.cx = rowlen;
     }
 }
 
@@ -446,6 +536,8 @@ void initialize_editor() {
     e_config.cx = 0;
     e_config.cy = 0;
     e_config.num_rows = 0;
+    e_config.row_offset = 0;
+    e_config.col_offset = 0;
     e_config.row = NULL;
 
     if (get_window_size(&e_config.screen_rows, &e_config.screen_cols) == -1) die("get_window_size");
